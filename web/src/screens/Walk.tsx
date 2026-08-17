@@ -13,6 +13,7 @@ import { watchPosition as watchGeoPosition, needsLocationDisclosure, markLocatio
 import { useStepCounter } from '../hooks/useStepCounter'
 import { addWalk } from '../lib/walks'
 import { api, type WalkDetailInfo, type RatingFlag } from '../lib/api'
+import { setWalkActive } from '../lib/walkGuard'
 
 const COLORS = ['#0f8b8d', '#e26d5c', '#7b6cf0', '#f2a541', '#58b86c']
 
@@ -106,6 +107,20 @@ export function Walk() {
   const [summary, setSummary] = useState<{ points: number; meters: number; steps: number; together: boolean; nature: boolean } | null>(null)
   const { steps, permissionNeeded, requestPermission, addMeters, reset: resetSteps } = useStepCounter()
 
+  // Lustrzane refy dla finalizacji przy odmontowaniu (cleanup efektu [] widzi
+  // domknięcie z pierwszego renderu — stan byłby przeterminowany, refy nie).
+  const phaseRef = useRef(phase)
+  const sessionIdRef = useRef(sessionId)
+  const stepsRef = useRef(steps)
+  useEffect(() => {
+    phaseRef.current = phase
+    // Flaga dla nawigacji (BottomNav/Sidebar): ostrzeżenie przed wyjściem
+    // z ekranu w trakcie aktywnego spaceru.
+    setWalkActive(phase === 'active')
+  }, [phase])
+  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+  useEffect(() => { stepsRef.current = steps }, [steps])
+
   // uczestnicy z serwera (autorytatywna lista) + kick dla hosta
   const [walkDetail, setWalkDetail] = useState<WalkDetailInfo | null>(null)
   const [kickArmedId, setKickArmedId] = useState<string | null>(null)
@@ -166,7 +181,83 @@ export function Walk() {
     return () => { if (timer.current) window.clearInterval(timer.current) }
   }, [phase])
 
-  useEffect(() => () => stopStreaming(), [])
+  // Wake Lock: przy aktywnym spacerze ekran nie gaśnie. Zgaszony ekran
+  // zatrzymuje GPS w przeglądarce (PWA nie ma geolokalizacji w tle), więc nie
+  // pozwalamy mu zgasnąć; system zwalnia lock przy każdym schowaniu strony,
+  // dlatego po powrocie do karty prosimy o niego ponownie.
+  useEffect(() => {
+    if (phase !== 'active') return
+    type Sentinel = { release(): Promise<void> }
+    const nav = navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<Sentinel> } }
+    if (!nav.wakeLock) return
+    let released = false
+    let sentinel: Sentinel | null = null
+    const acquire = () => {
+      nav.wakeLock!
+        .request('screen')
+        .then((s) => {
+          if (released) void s.release().catch(() => {})
+          else sentinel = s
+        })
+        .catch(() => { /* np. tryb oszczędzania baterii — spacer działa dalej */ })
+    }
+    acquire()
+    const onVisible = () => { if (document.visibilityState === 'visible') acquire() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', onVisible)
+      void sentinel?.release().catch(() => {})
+      sentinel = null
+    }
+  }, [phase])
+
+  // Zamknięcie karty / odświeżenie w trakcie spaceru — natywne „czy na pewno”.
+  useEffect(() => {
+    if (phase !== 'active') return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [phase])
+
+  // Auto-finalizacja przy odmontowaniu ekranu w trakcie aktywnego spaceru
+  // (nawigacja mimo ostrzeżenia, gest/przycisk wstecz): zapis wyniku do
+  // historii + best-effort stop/leave na serwerze — spacer nie znika bez
+  // śladu, a sesja nie wisi wiecznie jako „active”. Semantyka jak przycisk
+  // „Zakończ spacer”, tylko bez ekranu podsumowania.
+  const finalizeAbandonedWalk = () => {
+    if (phaseRef.current !== 'active') return
+    const sid = sessionIdRef.current
+    if (!sid) return
+    const mine = Array.from(walkersRef.current.values()).find((w) => w.isMe)
+    const finalSec = startedAtRef.current != null ? Math.max(0, Math.floor((Date.now() - startedAtRef.current) / 1000)) : 0
+    const now = new Date()
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = String(now.getMinutes()).padStart(2, '0')
+    addWalk({
+      id: sid,
+      dateLabel: `Dziś • ${hh}:${mm}`,
+      durationSec: finalSec,
+      steps: stepsRef.current,
+      points: Math.round(mine?.points ?? 0),
+      withSomeone: walkersRef.current.size > 1,
+      inNature: (mine?.nature ?? 1) > 1,
+      place: 'Spacer GPS',
+      routeSeed: Math.abs(Math.round((mine?.meters ?? 0) * 1000)) || Date.now() % 100000,
+      photos: [],
+    })
+    void Promise.allSettled([
+      apiRequest(`/walks/${sid}/stop`, { method: 'POST' }),
+      apiRequest(`/walks/${sid}/leave`, { method: 'POST' }),
+    ])
+  }
+
+  useEffect(() => () => {
+    finalizeAbandonedWalk()
+    stopStreaming()
+    setWalkActive(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const flush = () => setWalkers(Array.from(walkersRef.current.values()))
   const nameFor = (id: string) => namesRef.current.get(id) ?? `${id.slice(0, 4)}…`

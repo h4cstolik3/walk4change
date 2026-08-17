@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { House, Footprints, UsersThree, CalendarHeart, UserCircle } from '@phosphor-icons/react'
+import { isWalkActive, WALK_LEAVE_CONFIRM } from '../lib/walkGuard'
 
 const items = [
   { to: '/', label: 'Start', icon: House, owns: ['/', '/eco', '/partners'] },
@@ -19,6 +20,11 @@ export function BottomNav() {
           <Link
             key={to}
             to={to}
+            onClick={(e) => {
+              // Aktywny spacer: przypadkowy tap w nawigację odmontowuje ekran
+              // Walk i kończy sesję — pytamy, zanim user straci spacer.
+              if (to !== '/walk' && isWalkActive() && !window.confirm(WALK_LEAVE_CONFIRM)) e.preventDefault()
+            }}
             className="group flex flex-1 flex-col items-center gap-1 rounded-2xl py-1.5 transition"
           >
             <span

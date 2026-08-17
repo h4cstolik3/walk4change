@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { House, Footprints, UsersThree, CalendarHeart, Storefront, UserCircle } from '@phosphor-icons/react'
 import { Logo } from './Logo'
+import { isWalkActive, WALK_LEAVE_CONFIRM } from '../lib/walkGuard'
 
 const items = [
   { to: '/', label: 'Start', icon: House, owns: ['/', '/eco'] },
@@ -25,6 +26,10 @@ export function Sidebar() {
           <Link
             key={to}
             to={to}
+            onClick={(e) => {
+              // Jak w BottomNav: nie pozwól przypadkiem porzucić aktywnego spaceru.
+              if (to !== '/walk' && isWalkActive() && !window.confirm(WALK_LEAVE_CONFIRM)) e.preventDefault()
+            }}
             className={`flex w-44 items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-bold transition ${
               isActive
                 ? 'bg-gradient-to-br from-sea to-leaf text-white shadow-[0_10px_22px_rgba(15,139,141,0.3)]'
