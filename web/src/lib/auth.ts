@@ -39,14 +39,26 @@ export function setCurrentUserId(id: string | null): void {
   }
 }
 
-/** Logowanie e-mail + hasło. POST /auth/login, zapis tokenu JWT. Rzuca ApiError przy błędzie. */
+interface AuthProfile {
+  id?: string
+}
+
+/** Logowanie e-mail + hasło. POST /auth/login, zapis tokenu JWT i aktualnego user ID. Rzuca ApiError przy błędzie. */
 export async function login(email: string, password: string): Promise<void> {
-  const res = await apiRequest<unknown>('/auth/login', {
+  const res = await apiRequest<AuthProfile>('/auth/login', {
     method: 'POST',
     auth: false,
     body: { email, password },
   })
   if (res.token) setToken(res.token)
+
+  // Starszy backend loginu zwracał tylko token, bez profilu. Wtedy po loginie
+  // hasłem `ss-uid` zostawał pusty/stary, a historia spaceru odfiltrowywała
+  // własne punkty GPS i mapa wyglądała jak „bez trasy”. Po zapisaniu tokenu
+  // dociągamy /me tym samym klientem i ustawiamy ID z autorytatywnego profilu.
+  const profile = res.data?.id ? res : await apiRequest<AuthProfile>('/me')
+  if (profile.data?.id) setCurrentUserId(profile.data.id)
+
   setAuthed(true)
 }
 

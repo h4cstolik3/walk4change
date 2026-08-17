@@ -47,10 +47,19 @@ export function RealMap({ points, live = false, className = '' }: RealMapProps) 
     }).addTo(map)
     mapRef.current = map
 
-    // Bug ucięcia kafelków: kontener bywa 0×0 w momencie montażu (animacje/PWA).
-    window.setTimeout(() => map.invalidateSize(), 0)
+    // Bug ucięcia kafelków: kontener bywa 0×0 w momencie montażu
+    // albo zmienia rozmiar po animacji rozwinięcia karty w historii/PWA.
+    // Leaflet trzeba wtedy jawnie odświeżyć, inaczej mapa zostaje pusta/szara.
+    const invalidate = () => map.invalidateSize()
+    const timers = [0, 80, 250, 600].map((ms) => window.setTimeout(invalidate, ms))
+    const ro = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => invalidate())
+      : null
+    ro?.observe(el)
 
     return () => {
+      timers.forEach((id) => window.clearTimeout(id))
+      ro?.disconnect()
       map.remove()
       mapRef.current = null
       polylineRef.current = null
