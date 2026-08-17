@@ -245,6 +245,7 @@ async fn duplicate_seq_does_not_double_count() {
         lat: ORIGIN_LAT,
         lng: EAST_100M_LNG,
         recorded_at: chrono::Utc::now(),
+        accuracy: None,
     };
 
     let first = score_ping(&app.pool, &cfg, input.clone())
@@ -319,13 +320,16 @@ async fn per_second_ceiling_clamps_points() {
     seed_participant(&app.pool, session, user).await;
     seed_nature_zone(&app.pool, Decimal::new(3, 0)).await;
 
-    // Distance-prev: seq 1, 100s ago (outside the 1s sum window → contributes 0).
-    seed_ping(&app.pool, session, user, 1, ORIGIN_LNG, ORIGIN_LAT, 100.0, Decimal::ZERO).await;
+    // Distance-prev: seq 1, 1.5s ago → dt ≈ 1.5s, budżet ≈ 5.0 * dt (kilka pkt).
+    seed_ping(&app.pool, session, user, 1, ORIGIN_LNG, ORIGIN_LAT, 1.5, Decimal::ZERO).await;
     // Filler with a HIGHER seq so it is NOT chosen as prev, but recent (within 1s)
-    // so it counts toward awarded_last_sec = 4.8.
-    seed_ping(&app.pool, session, user, 100, ORIGIN_LNG, ORIGIN_LAT, 0.0, Decimal::new(48, 1)).await;
+    // so it counts toward awarded_last_sec = 999 — z zapasem ponad każdy realny
+    // budżet dt (test latencja może zwiększyć dt, ale nie do ~200s).
+    seed_ping(&app.pool, session, user, 100, ORIGIN_LNG, ORIGIN_LAT, 0.0, Decimal::new(999, 0)).await;
 
-    // Raw points would be ~3.0 (100m/100 * 3 * solo); 4.8 + 3.0 > 5.0 → clamp to 0.2.
+    // ~9m east: prędkość ~6 m/s (OK), powyżej deadbandu 5m → segment ma wartość,
+    // ale awarded_last_sec (999) już przekroczyło budżet → clamp do 0.
+    let east_9m_lng = ORIGIN_LNG + (EAST_100M_LNG - ORIGIN_LNG) * 0.09;
     let out = score_ping(
         &app.pool,
         &cfg,
@@ -334,7 +338,7 @@ async fn per_second_ceiling_clamps_points() {
             user_id: user,
             seq: 2,
             lat: ORIGIN_LAT,
-            lng: EAST_100M_LNG,
+            lng: east_9m_lng,
             recorded_at: chrono::Utc::now(),
             accuracy: None,
         },
@@ -343,7 +347,49 @@ async fn per_second_ceiling_clamps_points() {
     .expect("ok")
     .expect("inserted");
 
-    assert_eq!(n(out.points), n(Decimal::new(2, 1)), "clamped to 5.0 - 4.8 = 0.2");
+    assert_eq!(n(out.points), n(Decimal::ZERO), "burst over budget → clamped to 0");
+}
+
+#[tokio::test]
+async fn gap_recovery_segment_is_not_clamped() {
+    // Zgaszony ekran w PWA = brak pingów; po odblokowaniu jeden ping nadrabia
+    // całą przerwę. Budżet skalowany dt (a nie sztywne 5 pkt/ping) musi
+    // przepuścić taki segment w całości.
+    let app = common::spawn().await;
+    let cfg = ScoringConfig::default();
+    let user = seed_user(&app.pool, "score_gap@example.com").await;
+    let session = seed_session(&app.pool, user).await;
+    seed_participant(&app.pool, session, user).await;
+    seed_nature_zone(&app.pool, Decimal::new(3, 0)).await;
+
+    // Prev: seq 1, 600s ago → dt ≈ 600s (przerwa „telefon w kieszeni").
+    seed_ping(&app.pool, session, user, 1, ORIGIN_LNG, ORIGIN_LAT, 600.0, Decimal::ZERO).await;
+
+    // ~300m east po przerwie: prędkość 0.5 m/s (spacer), raw ≈ 300/100 * 3 = 9 pkt.
+    // Stary sufit 5 pkt/ping ściąłby to do 5 — nowy budżet (5 * 600) przepuszcza.
+    let east_300m_lng = ORIGIN_LNG + (EAST_100M_LNG - ORIGIN_LNG) * 3.0;
+    let out = score_ping(
+        &app.pool,
+        &cfg,
+        PingInput {
+            session_id: session,
+            user_id: user,
+            seq: 2,
+            lat: ORIGIN_LAT,
+            lng: east_300m_lng,
+            recorded_at: chrono::Utc::now(),
+            accuracy: None,
+        },
+    )
+    .await
+    .expect("ok")
+    .expect("inserted");
+
+    assert!(
+        out.points > Decimal::new(85, 1) && out.points < Decimal::new(95, 1),
+        "gap segment ~9.0 pkt ma przejść bez clampa, dostał {}",
+        out.points
+    );
 }
 
 #[tokio::test]
@@ -364,6 +410,7 @@ async fn recorded_at_out_of_tolerance_is_rejected() {
             lat: ORIGIN_LAT,
             lng: ORIGIN_LNG,
             recorded_at: chrono::Utc::now() - chrono::Duration::seconds(600),
+            accuracy: None,
         },
     )
     .await;

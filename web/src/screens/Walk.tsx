@@ -412,6 +412,9 @@ export function Walk() {
       if (startedAtRef.current != null) {
         setSec(Math.max(0, Math.floor((Date.now() - startedAtRef.current) / 1000)))
       }
+      // Po powrocie z zgaszonego ekranu pierwszy dobry fix ma iść od razu
+      // (bez czekania na okno throttle) — serwer doliczy segment całej przerwy.
+      lastSentRef.current = 0
       if (!socketRef.current) reconnectSocket(sessionId)
     }
     document.addEventListener('visibilitychange', onVisible)
@@ -700,6 +703,9 @@ export function Walk() {
                   {combined > 1 && <Pill tone="sand">razem ×{combined.toFixed(1)}</Pill>}
                   <Pill tone="muted"><Footprints size={12} /> GPS</Pill>
                 </div>
+                <p className="mt-3 text-center text-[11px] leading-snug text-muted">
+                  Możesz zgasić ekran i schować telefon — spacer trwa, a trasa doliczy się po odblokowaniu.
+                </p>
                 {permissionNeeded && (
                   <button onClick={requestPermission} className="mt-3 w-full rounded-2xl bg-sea/10 py-2 text-xs font-bold text-sea">
                     Zezwól na ruch, by liczyć kroki dokładniej →

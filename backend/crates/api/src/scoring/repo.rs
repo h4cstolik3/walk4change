@@ -176,8 +176,15 @@ pub async fn score_ping(
     );
     let effective_meters = scored.effective_meters;
 
-    // 5. Per-second ceiling: clamp using points already awarded in the trailing
+    // 5. Anti-fraud ceiling: clamp using points already awarded in the trailing
     //    1s window (computed BEFORE the insert so it excludes this ping).
+    //    Budżet skaluje się z odstępem od poprzedniego pingu (clamp 1 s..1 h):
+    //    seria pingów w tej samej sekundzie dalej jest ścięta do 5 pkt, ale
+    //    segment nadrabiany po zgaszonym ekranie (PWA nie dostaje GPS w tle —
+    //    pozycje wracają dopiero po odblokowaniu) dostaje budżet całej przerwy
+    //    zamiast jednej sekundy. Realny sufit pojedynczego pingu i tak wyznacza
+    //    teleport-guard w score_segment: 8 m/s ⇒ ~0.36 pkt/s przy pełnych
+    //    mnożnikach, zawsze poniżej 5 pkt/s budżetu.
     let awarded_last_sec: Decimal = sqlx::query_scalar(
         "SELECT COALESCE(SUM(points), 0) FROM location_pings \
          WHERE user_id = $1 AND received_at > now() - interval '1 second'",
@@ -187,8 +194,10 @@ pub async fn score_ping(
     .await
     .map_err(AppError::internal)?;
 
-    let points = if awarded_last_sec + scored.points > cfg.max_points_per_second {
-        (cfg.max_points_per_second - awarded_last_sec).max(Decimal::ZERO)
+    let budget = cfg.max_points_per_second
+        * Decimal::from_f64_retain(dt_secs.clamp(1.0, 3600.0)).unwrap_or(Decimal::ONE);
+    let points = if awarded_last_sec + scored.points > budget {
+        (budget - awarded_last_sec).max(Decimal::ZERO)
     } else {
         scored.points
     };
