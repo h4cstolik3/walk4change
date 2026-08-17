@@ -15,6 +15,7 @@ import { History } from './screens/History'
 import { Partners } from './screens/Partners'
 import { MagicVerify } from './screens/MagicVerify'
 import { VerifyEmail } from './screens/VerifyEmail'
+import { InstallModal } from './components/InstallModal'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -68,6 +69,7 @@ function App() {
       </Route>
       </Route>
     </Routes>
+    <InstallModal />
     </>
   )
 }

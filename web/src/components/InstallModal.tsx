@@ -4,6 +4,12 @@ import { DownloadSimple, X, Export, DotsThreeVertical } from '@phosphor-icons/re
 import { LogoMark } from './Logo'
 
 const DISMISS_KEY = 'ss-install-dismissed-v2'
+const SHOW_EVENT = 'seasteps:show-install'
+
+export function showInstallModal() {
+  try { localStorage.removeItem(DISMISS_KEY) } catch { /* ignore */ }
+  window.dispatchEvent(new Event(SHOW_EVENT))
+}
 
 // Capture beforeinstallprompt at module load — before React mounts — so we never miss it
 let _earlyPip: any = null
@@ -40,12 +46,20 @@ export function InstallModal() {
 
   useEffect(() => {
     if (isStandalone()) return
-    if (localStorage.getItem(DISMISS_KEY) === '1') return
+
+    const showManual = () => {
+      try { localStorage.removeItem(DISMISS_KEY) } catch { /* ignore */ }
+      setOpen(true)
+    }
+
+    const onInstalled = () => setOpen(false)
+    window.addEventListener('appinstalled', onInstalled)
+    window.addEventListener(SHOW_EVENT, showManual)
 
     const capture = (e: any) => {
       e.preventDefault()
       setDeferred(e)
-      setOpen(true)
+      if (localStorage.getItem(DISMISS_KEY) !== '1') setOpen(true)
     }
 
     // pick up any event captured before React mounted
@@ -56,15 +70,17 @@ export function InstallModal() {
       window.addEventListener('beforeinstallprompt', capture)
     }
 
-    window.addEventListener('appinstalled', () => setOpen(false))
-
     // Fallback: even WITHOUT a native prompt (iOS, Firefox, or Chrome that
     // already swallowed beforeinstallprompt), show the card after a short delay
     // so there is always a visible install affordance with instructions.
-    const fallback = window.setTimeout(() => setOpen(true), 3500)
+    const fallback = window.setTimeout(() => {
+      if (localStorage.getItem(DISMISS_KEY) !== '1') setOpen(true)
+    }, 3500)
 
     return () => {
       window.removeEventListener('beforeinstallprompt', capture)
+      window.removeEventListener('appinstalled', onInstalled)
+      window.removeEventListener(SHOW_EVENT, showManual)
       window.clearTimeout(fallback)
     }
   }, [])
