@@ -1,0 +1,10 @@
+# Vercel builduje landing+app przez scripts/build-site.sh — potrzebuje tylko
+# zrodel landingu i web/. Reszta NIE moze byc uploadowana (backend/ ma 2,9 GB).
+backend
+docs
+site
+web/node_modules
+web/dist
+*.bak
+_backup
+app-preview-src

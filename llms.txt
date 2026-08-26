@@ -1,0 +1,26 @@
+# SeaSteps
+
+> SeaSteps to grywalizowana aplikacja webowa (PWA) do spacerów: punkty za ruch, więcej punktów za spacer z drugą osobą i w naturze. Projekt znad Bałtyku, wyróżniony przez jury na hackathonie Hack4Change 2026. Obecnie w fazie pilotażu.
+
+## Czym jest
+
+SeaSteps zamienia spacer w grę: użytkownik zbiera punkty za kroki, a spacery z ludźmi i w terenach zielonych są punktowane wyżej. Cel: więcej ruchu, realnych spotkań i kontaktu z naturą.
+
+## Status
+
+- Faza: pilotaż / rozwój produktu (2026). Aplikacja dostępna pod https://seasteps.pl/app (bezpłatna w pilotażu).
+- Projekt powstał na hackathonie Hack4Change 2026 (wyróżnienie jury) i jest rozwijany dalej.
+
+## Kto stoi za projektem
+
+Olimpia Goździewicz — https://olimpiagozdziewicz.pl/ (opis projektu także na jej blogu: https://olimpiagozdziewicz.pl/blog/pierwszy-hackathon-seasteps.html).
+
+## Kontakt
+
+- E-mail: admin@seasteps.pl
+
+## Główne strony
+
+- https://seasteps.pl/ — strona główna projektu
+- https://seasteps.pl/privacy.html — polityka prywatności
+- https://seasteps.pl/regulamin.html — regulamin
