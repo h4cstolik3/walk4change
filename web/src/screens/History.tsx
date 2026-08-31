@@ -79,7 +79,14 @@ export function History() {
           .filter((p) => !myId || p.userId === myId)
           .sort((a, b) => a.seq - b.seq)
           .map((p) => ({ lat: p.lat, lng: p.lng }))
-        setTracks((prev) => ({ ...prev, [sessionId]: mine }))
+
+        // Bezpiecznik: przy brakującym/starym `ss-uid` nie wolno zamieniać
+        // niepustego tracka z backendu w pustą mapę. Endpoint jest member-only,
+        // więc użytkownik i tak ma prawo widzieć punkty tej sesji.
+        const fallback = points
+          .sort((a, b) => a.seq - b.seq)
+          .map((p) => ({ lat: p.lat, lng: p.lng }))
+        setTracks((prev) => ({ ...prev, [sessionId]: mine.length > 0 ? mine : fallback }))
       })
       .catch(() => setTracks((prev) => ({ ...prev, [sessionId]: [] })))
       .finally(() => setTrackLoadingId(null))
